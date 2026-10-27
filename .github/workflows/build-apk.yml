@@ -1,9 +1,12 @@
 name: Build MJ Screen Capture APK
 
 on:
-  workflow_dispatch:
   push:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -17,20 +20,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE=$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)
-          if [ -z "${ZIP_FILE:-}" ]; then
-            echo "ERROR: No Android source ZIP found in repository root."
+          mapfile -t zips < <(find . -maxdepth 1 -type f -iname '*.zip' -print)
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo "Expected exactly one Android source ZIP in repository root. Found: ${#zips[@]}"
+            printf '%s\n' "${zips[@]}"
             exit 1
           fi
-          echo "Using source ZIP: $ZIP_FILE"
+          ZIP_FILE="${zips[0]}"
           rm -rf .android_source
-          mkdir -p .android_source
+          mkdir .android_source
           unzip -q "$ZIP_FILE" -d .android_source
-          test -f .android_source/settings.gradle.kts
-          test -f .android_source/build.gradle.kts
-          test -f .android_source/app/build.gradle.kts
-          cp -a .android_source/. ./
+
+          ROOT=".android_source"
+          if [ ! -f "$ROOT/settings.gradle.kts" ]; then
+            echo "ERROR: settings.gradle.kts not found in extracted source."
+            find .android_source -maxdepth 3 -type f | sort | head -100
+            exit 1
+          fi
+          if [ ! -d "$ROOT/app" ]; then
+            echo "ERROR: app directory not found in extracted source."
+            exit 1
+          fi
+
+          rsync -a --delete --exclude='.github/' "$ROOT/" ./
           rm -rf .android_source
+          echo "Android source extracted successfully."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
@@ -38,25 +52,25 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Use preinstalled Android SDK
+      - name: Verify preinstalled Android SDK
         shell: bash
         run: |
           set -euo pipefail
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-          test -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          sdkmanager --version
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-      - name: Install Android SDK 36 packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          test -d "$ANDROID_SDK_ROOT" || { echo "Android SDK root not found"; exit 1; }
+          test -f "$ANDROID_SDK_ROOT/platforms/android-36/android.jar" || {
+            echo "Android API 36 is not installed on this runner."
+            exit 1
+          }
+          test -x "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2" || {
+            echo "Android Build Tools 36.0.0 are not installed on this runner."
+            exit 1
+          }
+
+          echo "Android API 36 and Build Tools 36.0.0 are available."
 
       - name: Set up Gradle 9.6.0
         uses: gradle/actions/setup-gradle@v6
@@ -67,7 +81,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle wrapper --gradle-version 9.6.0
+          gradle wrapper --gradle-version 9.6.0 --distribution-type bin
           chmod +x ./gradlew
 
       - name: Build Phase 2 debug APK
@@ -77,9 +91,9 @@ jobs:
           ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload APK
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: MJ-Screen-Capture-Phase2-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
+
