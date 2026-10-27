@@ -1,177 +1,133 @@
-MJ Screen Capture APK
-
-Project Purpose
-
-This repository builds a native Android application that captures a live video shown on the phone screen and saves one crop when a new card appears in either of two fixed screen areas. The app tracks presence and absence only. It must not identify card rank, suit, name, or denomination.
-
-The app is developed and built from a phone using GitHub and GitHub Actions. GitHub Actions is only the build environment; the installed APK must work offline.
-
-Current Status — 28 October 2026
-
-Phase 8 corrective testing is in progress. Do not mark the project complete yet.
-
-Observed on the phone in the RC4 test build:
-
-- MediaProjection starts and the received-frame counter increases.
-- Area setup and notification actions open/work.
-- The app saves images to History.
-- Auto-capture can save duplicate or incorrect images when the video brightness blinks or changes briefly.
-- Some saved crops appear blank or include the wrong part of the screen, and the Left/Right preview labels have appeared reversed.
-- An empty-background preview showed cards in the selected areas. That sample must not be confirmed as an empty baseline.
-
-RC5 is intended to correct the calibration workflow, crop mapping, and duplicate-save behavior. RC5 is not considered verified until GitHub Actions builds successfully and the installed APK passes the phone tests in this README. Update this section only after a test has actually passed.
-
-Definitive Screen-Area Mapping
-
-Use physical phone-screen positions, not the order in which the areas are configured:
-
-- LEFT = physical left side of the screen = Dragon area.
-- RIGHT = physical right side of the screen = Tiger area.
-
-The crop previews and saved History labels must match these definitions. If a preview for LEFT shows the card from the physical right side, calibration/crop mapping is wrong and must be fixed before saving or testing automatic capture.
-
-When a new card appears, save one crop for that appearance. If both areas become eligible on the same analyzed frame, RIGHT is saved first. If LEFT appears first, it must still be captured first. Each side has its own independent detection state.
-
-Required Runtime Behavior
-
-1. Capture the screen through Android "MediaProjection", "VirtualDisplay", and "ImageReader".
-2. Monitor only the two saved rectangular regions.
-3. Detect card presence/absence through image comparison against a user-confirmed empty-background baseline. Do not use OCR, YOLO, card-symbol templates, or card-name recognition.
-4. Save a crop only after a persistent, stable change indicates that a card has appeared.
-5. Save exactly one image for that appearance. Keep the region locked while the card remains visible or the result is ambiguous.
-6. Re-arm only after that region has matched its empty baseline for consecutive analyzed frames.
-7. Ignore ordinary brightness/contrast flashes and small display changes as far as practical. Raw pixel inequality alone must not trigger a save.
-8. Never save a blank/background crop as a card image. If the evidence is ambiguous, do not save; keep checking.
-9. Save in actual capture order using database sequence numbers: "001", "002", "003", etc. When both sides are ready at the same time, RIGHT takes priority.
-
-Recommended state machine per region:
-
-"EMPTY → CARD CANDIDATE → CARD STABLE → SAVE ONE IMAGE → LOCKED → EMPTY CONFIRMED → READY"
-
-The detection implementation should use illumination-tolerant comparison (for example, grayscale/brightness normalization plus a meaningful changed-area threshold), multi-frame stability checks, and a separate consecutive-empty check. Keep these thresholds in one clearly named configuration area so they can be tuned with real tests. A single brightness pulse or one changed frame must never save an image or re-arm a locked region.
-
-Calibration: Two Different Samples
-
-The full-screen Area Selection Sample and the Empty Background Sample have different jobs. Do not treat them as the same sample.
-
+MJ Screen Capture APK — Phase 8 RC6 Candidate
+Project purpose
+A native Android application that captures a live video displayed on the phone screen and saves a crop when a new card appears in one of two fixed screen regions. The app tracks card presence and absence only. It must not identify card rank, suit, name, or denomination.
+The project is built from an Android phone using GitHub and GitHub Actions. GitHub Actions is used only to compile the APK. The installed app must work fully offline.
+Current status — 28 October 2026
+RC5 detection behavior is user-tested and confirmed as the known-good baseline. The user reports that a new card appearance is saved, while brightness blinking and unrelated visual changes do not create extra saves. History showed sequential examples such as 001 through 010.
+RC6 is a candidate build for Deck folders and compact History. Source/ZIP/static checks have passed, but RC6's actual Gradle build and phone tests have not yet been confirmed. Do not call RC6 complete until GitHub Actions builds successfully and the updated APK passes the phone tests below.
+RC6 must preserve the RC5 DetectionEngine.kt behavior. Do not change the detector, stability thresholds, or re-arm logic unless a reproducible runtime bug is demonstrated.
+Definitive screen-area mapping
+Use physical phone-screen position, not the order in which the rectangles were configured:
+LEFT = physical left side of the phone screen = Dragon region.
+RIGHT = physical right side of the phone screen = Tiger region.
+The selected-area previews, saved crop images, and History labels must follow this mapping. Verify crop boundaries before accepting calibration.
+Each region is monitored independently. If LEFT appears first, it must not be missed. If both regions become eligible in the same analyzed frame, RIGHT is saved first. Otherwise, save in actual accepted-capture order.
+Required detection behavior
+Capture the phone screen through Android MediaProjection, VirtualDisplay, and ImageReader.
+Monitor only the two user-selected rectangles.
+Compare the selected areas against a user-confirmed empty-background baseline. Do not use OCR, YOLO, card templates, or card-name/suit recognition.
+Require a persistent, stable presence change before saving a card crop.
+Save exactly one image per card appearance. Keep that region locked while the same card remains visible or the evidence is ambiguous.
+Re-arm only after the region matches its empty baseline for consecutive analyzed frames.
+Ignore ordinary brightness/contrast flashes and unrelated small display changes as far as practical. Raw pixel inequality alone must not trigger a save.
+Do not save blank/background crops or calibration samples as card images.
+Save actual accepted capture order in SQLite, with a sequence starting at 001 for each Deck.
+Expected state machine per region:
+EMPTY → CARD CANDIDATE → CARD STABLE → SAVE ONE IMAGE → LOCKED → EMPTY CONFIRMED → READY
+The RC5 detector behavior is currently the known-good baseline. Do not replace it with a new algorithm without evidence from a reproduced failure.
+Calibration: two distinct samples
+The app uses two different samples. They must not be confused.
 1. Area Selection Sample
-
-- Capture a frozen full-screen frame through the app's notification action.
-- Use this frame only to draw the LEFT and RIGHT rectangles.
-- It is not an empty baseline and must never be inserted into History.
-- The user must be able to select, adjust, test, reset, and save both rectangles.
-
+A frozen full-screen frame captured through the app's notification action.
+Used only to draw/edit the LEFT and RIGHT rectangles.
+Must never become an empty baseline or appear in History.
 2. Empty Background Sample
-
-- Capture a second full-screen frame through the notification action while no card is visible in either selected region.
-- After both samples are available, open Capture Area and draw/select LEFT and RIGHT rectangles on the Area Selection Sample.
-- Apply those same screen coordinates to the Empty Background Sample and show both resulting crop previews labelled LEFT and RIGHT.
-- The previews must be checked before saving. The user confirms that neither crop contains a card, then saves the areas and the empty baselines together.
-- One empty-background frame must produce two separate private baseline crops: one for LEFT and one for RIGHT.
-- Empty samples and area-selection samples are calibration data only. They must not appear in History or count as captured cards.
-- The notification should make the next action clear: after Capture Area Sample, offer Capture Empty Sample. The app should then let the user return to the configuration screen and save both samples together.
-- Calibration remains saved between capture sessions until the user changes or resets it. Provide a clear way to recapture/replace the empty baseline in Settings.
-
-Important: The app does not recognize card symbols, so it cannot claim to visually verify that a sample contains no card. The preview and explicit user confirmation are required. If either preview visibly contains a card, do not save it as an empty baseline; capture another empty frame.
-
-Coordinate Safety
-
-- Store region rectangles in the captured frame's pixel coordinate system.
-- Use the same mapping transform between the displayed/frozen sample and the actual captured bitmap. Correctly account for "ImageView" scaling, letterboxing/cropping, status/navigation bars, and display size.
-- Before saving calibration, test that LEFT preview contains only the physical-left/Dragon region and RIGHT preview contains only the physical-right/Tiger region.
-- If resolution, orientation, or capture-frame dimensions change, invalidate or safely remap calibration and ask the user to recalibrate. Never silently reuse invalid coordinates.
-- Only pixels inside the relevant selected region may be saved as a card crop.
-
-Capture Controls and Notifications
-
-- Use a foreground service while screen capture is active, with a persistent notification and explicit Stop control.
-- The notification should offer Auto Capture Start/Pause, Stop Capture, and the appropriate calibration-sample action.
-- Auto Capture must be unavailable until both regions and both valid empty-baseline crops have been saved.
-- Starting a session must not silently resume an old or invalid calibration.
-- Follow Android MediaProjection consent and lifecycle requirements. Stop/cleanup must release the projection, virtual display, image reader, bitmaps, and service resources.
-
-Storage and History
-
-- Save captured crops in app-private storage; do not automatically add them to the phone gallery.
-- SQLite ("SQLiteOpenHelper") stores at minimum: internal ID, sequence number, side ("LEFT"/"RIGHT"), and image path.
-- Display sequence from database order, not filename alone.
-- History contains only accepted card captures—not area samples, empty baselines, blank frames, or temporary test previews.
-- History shows numbered thumbnails and side labels, without card names or dates.
-- Support basic open/view and, as already implemented, image export. Edit/crop/rotate/delete/move/replace can be added without changing detection behavior.
-- Calibration images and empty baselines stay separate from History.
-
-Main Screens
-
-- Main / Capture Status
-- Capture Area and Calibration
-- History
-- Image Detail / Edit
-- Reference (optional manual storage only)
-- Basic Settings, including recapture/replace empty-background baseline
-
-The optional 52-card Reference section is for manually managed images only. It must not be used for automatic card recognition in this version.
-
-Offline and Privacy Requirements
-
-The final APK must run fully offline at runtime. Do not add:
-
-- Firebase, login/accounts, analytics, or an external server
-- Cloud AI/API calls or network-dependent runtime processing
-- OCR, YOLO, or automatic rank/suit/card-name recognition
-- Bypasses for protected content or Android security restrictions
-- Unnecessary permissions, services, or unrelated UI features
-
-Screen capture must use Android's supported MediaProjection consent flow. If a source video blocks capture through Android security protections, do not attempt to bypass that protection.
-
-Technical Baseline
-
-- Native Android; Kotlin; XML Android Views
-- "compileSdk = 36"
-- "targetSdk = 36"
-- "minSdk = 26"
-- JDK 17
-- Android Gradle Plugin 9.4.0
-- Gradle 9.6.0
-- AGP built-in Kotlin support
-- "SQLiteOpenHelper" and built-in file APIs
-
-Do not apply "org.jetbrains.kotlin.android" when using AGP 9 built-in Kotlin support.
-
-Build and Error-Fix Rules
-
+A separate full-screen frame captured while no card is visible in either selected region.
+Apply the saved rectangles to this frame and show two crop previews labelled LEFT and RIGHT.
+The user must visually check both previews and confirm that no card is present before saving the samples as empty baselines.
+Store one private baseline crop per region; never insert either baseline into a Deck or History.
+The notification workflow should allow the user to capture the Area Selection Sample and then capture the Empty Background Sample. The user can return to area setup, select the two rectangles, preview both empty crops, and save them together.
+Settings must provide a way to replace the Empty Background Sample.
+The app does not recognize card symbols, so it cannot automatically prove a sample is empty. User confirmation is required. If either preview contains a card, capture a new empty frame.
+Coordinate safety
+Store selected rectangles relative to the actual captured frame's pixel coordinates.
+Correctly map coordinates between the displayed sample and captured bitmap, including ImageView scaling, letterboxing/cropping, status/navigation bars, and display dimensions.
+Confirm the LEFT and RIGHT previews show only their intended physical screen regions.
+Detect screen-size, orientation, or captured-frame dimension changes. Do not silently reuse invalid coordinates; safely remap or ask for recalibration.
+Only pixels inside the appropriate selected rectangle may be saved as the card crop.
+Deck folders and capture sessions — RC6
+A Deck is a logical folder displayed inside the app and backed by a private app-storage directory. It is not automatically created in the phone's public gallery.
+Every new Screen Capture session creates a fresh Deck by default: Deck 1, Deck 2, Deck 3, and so on.
+Accepted card crops from that capture session are stored in its active Deck.
+Pause Auto Capture pauses detection/saving but keeps the same active Deck. Resume Auto Capture continues in that Deck.
+Stop Capture ends the current screen-capture session. The next fresh Screen Capture start creates a new Deck by default.
+The user can choose Use Next on an existing Deck to append captures from the next session to that Deck. The chosen Deck must have space under the 400-image limit.
+The History Deck list must support Open, Rename, Delete, and Use Next. The user must also be able to choose a new Deck for the next session rather than reusing a previously selected one.
+Deck names must be unique. Renaming a Deck changes its displayed name/folder label; deleting Deck 1 must not silently rename the remaining Decks. The user can manually rename another Deck to the freed name.
+Deleting a Deck requires confirmation and permanently deletes that Deck's records and images. The currently active Deck cannot be deleted. If the deleted Deck was queued for reuse, clear that selection.
+Each Deck has its own sequence numbers, starting at 001. Sequence order is based on database order, not filenames alone.
+Each Deck has a hard maximum of 400 images. At 400/400, Auto Capture must pause or stop saving with a clear status message; image 401 must not be added.
+Existing RC5 captures must be preserved by the database migration and shown under Previous captures.
+History and image management — RC6
+Opening History shows the Deck folder list. Opening a Deck shows only that Deck's images.
+The selected Deck's History grid uses 10 compact thumbnails per horizontal row. Each thumbnail displays sequence and side, such as 001 L or 001 R.
+Tapping a thumbnail opens the larger image/detail view.
+Search by sequence or side within the selected Deck.
+Preserve image detail/view and any existing crop, rotate, delete, move, replace, and export behavior unless a specific regression is reproduced.
+Export This Deck (ZIP) includes only the selected Deck. Export All groups images by Deck in the ZIP and includes a CSV index.
+History contains accepted card crops only—not area-selection samples, empty baselines, blank frames, or temporary previews.
+Images and calibration assets stay in app-private storage and are not automatically added to the public gallery.
+Main screens
+Main / Capture Status
+Capture Area and Calibration
+History / Deck list
+Image Detail / Edit
+Reference (optional manual storage only)
+Basic Settings, including replace-empty-baseline workflow
+The optional Reference section contains 52 manually managed standard playing-card image slots. Reference images are not used for automatic recognition.
+Capture controls and Android lifecycle
+A foreground service operates while screen capture is active, with a persistent notification and explicit Stop control.
+Notification controls should include Start/Pause Auto Capture, Stop Capture, and the appropriate calibration-sample action.
+Auto Capture must not start until both regions and valid empty-baseline crops have been saved.
+Pausing auto-capture must not end the active Deck. Stopping screen capture ends that Deck session.
+Follow Android MediaProjection consent/lifecycle requirements and release the projection, virtual display, image reader, bitmaps, and service resources when stopping.
+Runtime privacy and offline restrictions
+The final APK must work fully offline. Do not add:
+INTERNET permission, Firebase, login/accounts, analytics, or an external server
+Cloud AI/API or network-dependent runtime processing
+OCR, YOLO, or automatic rank/suit/card-name recognition
+Any bypass of Android protected-content/security restrictions
+Unnecessary permissions, background services, or unrelated features
+Use Android's supported MediaProjection consent flow. If a source video blocks screen capture through Android security protections, do not try to bypass that protection.
+Technical baseline
+Native Android; Kotlin; XML Android Views
+compileSdk = 36
+targetSdk = 36
+minSdk = 26
+JDK 17
+Android Gradle Plugin 9.4.0
+Gradle 9.6.0
+AGP 9 built-in Kotlin support
+SQLiteOpenHelper and built-in file APIs
+Do not apply org.jetbrains.kotlin.android when using AGP 9 built-in Kotlin support. The RC5-to-RC6 database migration must be additive and preserve existing captures.
+Build and error-fix rules
 When GitHub Actions fails:
-
-1. Identify the exact failed step.
-2. Read the first actual compiler/tool error ("e: ...", "error:", or the first causal error), not only the final stack trace.
-3. State the root cause and exact file/path.
-4. Change only the files required to fix that cause.
-5. Re-run the build and inspect the complete result.
-6. Do not claim a fix worked until GitHub Actions succeeds. A green build alone does not prove the app works; install and test the APK too.
-7. Do not replace unrelated code or silently change requirements.
-
-Keep the project source ZIP and workflow filenames consistent with the actual workflow. Avoid leaving multiple active workflows that build different/old source versions.
-
-Phase 8 Phone Test Checklist
-
-Run these checks on the installed APK and record the result for each:
-
-1. Build succeeds; APK artifact downloads and installs/updates without a crash.
-2. Capture Area Sample and Empty Background Sample are separate, and both can be captured from the notification.
-3. Select and save LEFT/Dragon and RIGHT/Tiger rectangles; verify preview labels and crops are correct.
-4. Capture an empty frame while both regions truly have no card; confirm both empty crops visually before saving.
-5. Start Auto Capture with an empty screen; History count must not increase.
-6. Show one stable card in LEFT; exactly one correctly cropped "LEFT" image is saved.
-7. Show one stable card in RIGHT; exactly one correctly cropped "RIGHT" image is saved.
-8. Keep a card visible while brightness/contrast flashes; no duplicate save is allowed.
-9. Let the region become empty; it must re-arm only after consecutive empty frames.
-10. Show the next card in the same region; exactly one new image is saved.
-11. Make LEFT appear first; LEFT must not be missed.
-12. Make both appear together; RIGHT is saved first, then LEFT.
-13. Check at least 10 rounds, then 50 and 100 rounds. Count expected appearances against History and inspect crop boundaries and side labels.
-14. Stop Capture; the notification/service stops cleanly and saved History remains available offline.
-
-Do not declare Phase 8 complete until the build is green and the relevant runtime tests pass. If duplicate/blank/wrong-side crops remain, fix the detection or coordinate mapping before increasing the test count.
-
-Requirement Protection
-
-This README is the requirement baseline. Do not silently add or remove behavior. Discuss any material requirement change before implementation. If this README and code disagree, follow the requirement baseline and correct the implementation rather than weakening the requirement.
+Identify the exact failed workflow step.
+Read the first actual compiler/tool error (e: ..., error: ...), not only the final stack trace or unrelated warnings.
+Identify the root cause and exact file/path.
+Change only the required file(s). Do not randomly rewrite the project or touch the working detector without a reproduced issue.
+Re-run static checks and the build, then inspect the result.
+Do not claim a fix worked until GitHub Actions finishes green. A green build alone does not prove runtime behavior; install and test the APK too.
+Ensure the workflow uses the exact source ZIP name MJ_Phase8_Integrated_RC6.zip. Disable conflicting active workflows that might build an older source version.
+Preserve the last known-good source ZIP and workflow before risky changes.
+Verify artifact download links against the exact generated file paths. If a link fails, recreate the artifact at a new verified path rather than reusing an unverified link.
+RC6 phone test checklist
+Record each result as pass/fail; do not mark untested items complete.
+GitHub Actions static checks pass; :app:assembleDebug succeeds; APK artifact downloads and installs/updates without a crash.
+Existing RC5 history remains after the update and appears under Previous captures.
+Start Screen Capture; a new Deck appears by default.
+Start Auto Capture and introduce cards; each accepted crop is saved in the active Deck with sequences 001, 002, etc.
+Pause Auto Capture; no new images are saved. Resume; saving continues in the same Deck.
+Stop Capture, then start a new Screen Capture session; a new Deck is created by default.
+Select Use Next on a non-full Deck; the next session appends captures to that Deck.
+Rename a Deck; its new name appears, duplicate names are rejected, and the user can manually rename a Deck to a name freed by deletion.
+Delete a non-active Deck after confirmation; its images/records disappear. Deleting the active Deck is blocked.
+At 400 images in one Deck, Auto Capture pauses/reports the limit and image 401 is not added.
+A Deck grid displays 10 compact thumbnails per row; tapping a thumbnail opens the full image/detail.
+Search by sequence and side works inside the selected Deck.
+Export This Deck contains only that Deck; Export All preserves per-Deck folders and its CSV index.
+Re-test card changes and brightness blinking to confirm the known-good RC5 detector behavior remains intact.
+Expand the test to 10, then 50 and 100 rounds as practical. Compare expected appearances to History and inspect crops, labels, ordering, and duplicate counts.
+Stop capture; notification/service stops cleanly and saved data remains available offline.
+Requirement protection
+This README is the requirement baseline. Do not silently add/remove behavior, networking, recognition capability, permissions, services, or unrelated UI. Discuss material requirement changes before implementation. If code and README conflict, follow this specification and correct the implementation rather than weakening the requirements.
