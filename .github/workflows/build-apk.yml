@@ -1,4 +1,4 @@
-name: Build MJ Screen Capture APK - Phase 3 v2
+name: Build MJ Screen Capture APK - Phase 8 RC1
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -20,17 +20,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Extract and validate Phase 3 source ZIP
+      - name: Extract and statically validate integrated source ZIP
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase3_Source_v2.zip"
-          SOURCE_DIR="$RUNNER_TEMP/mj_phase3_source"
+          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase8_Integrated_RC1.zip"
+          SOURCE_DIR="$RUNNER_TEMP/mj_phase8_rc1"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Required source ZIP is missing: MJ_Phase3_Source_v2.zip"
-            echo "Upload that exact ZIP to the repository root."
-            echo "Root files currently present:"
+            echo "ERROR: Required source ZIP is missing: MJ_Phase8_Integrated_RC1.zip"
+            echo "Upload that exact ZIP to the repository root. Older phase ZIPs may remain; they are ignored."
             find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -printf '%f\n' | sort
             exit 1
           fi
@@ -46,19 +45,58 @@ jobs:
             gradle.properties \
             app/build.gradle.kts \
             app/src/main/AndroidManifest.xml \
-            app/src/main/java/com/mjthakur/screencapture/CaptureService.kt \
             app/src/main/java/com/mjthakur/screencapture/MainActivity.kt \
+            app/src/main/java/com/mjthakur/screencapture/CaptureService.kt \
+            app/src/main/java/com/mjthakur/screencapture/CaptureConfig.kt \
+            app/src/main/java/com/mjthakur/screencapture/CaptureApplication.kt \
             app/src/main/java/com/mjthakur/screencapture/AreaSetupActivity.kt \
             app/src/main/java/com/mjthakur/screencapture/AreaSelectionView.kt \
+            app/src/main/java/com/mjthakur/screencapture/DetectionEngine.kt \
+            app/src/main/java/com/mjthakur/screencapture/CaptureDatabase.kt \
+            app/src/main/java/com/mjthakur/screencapture/HistoryActivity.kt \
+            app/src/main/java/com/mjthakur/screencapture/ImageDetailActivity.kt \
+            app/src/main/java/com/mjthakur/screencapture/CropActivity.kt \
+            app/src/main/java/com/mjthakur/screencapture/ImageUtils.kt \
+            app/src/main/java/com/mjthakur/screencapture/ReferenceActivity.kt \
+            app/src/main/java/com/mjthakur/screencapture/InsetsHelper.kt \
+            app/src/main/res/layout/activity_main.xml \
             app/src/main/res/layout/activity_area_setup.xml; do
             if [ ! -f "$SOURCE_DIR/$required" ]; then
               echo "ERROR: Required source file missing: $required"
-              find "$SOURCE_DIR" -maxdepth 7 -type f | sort | head -100
               exit 1
             fi
           done
 
-          echo "ZIP integrity and required source files verified."
+          python3 - "$SOURCE_DIR" <<'PY'
+          import pathlib, sys, xml.etree.ElementTree as ET
+          root = pathlib.Path(sys.argv[1])
+          manifest_path = root / "app/src/main/AndroidManifest.xml"
+          manifest = ET.parse(manifest_path).getroot()
+          android_ns = "{http://schemas.android.com/apk/res/android}"
+          permissions = [node.get(android_ns + "name", "") for node in manifest.findall("uses-permission")]
+          if "android.permission.INTERNET" in permissions:
+              raise SystemExit("ERROR: App manifest must not request INTERNET permission.")
+          app = manifest.find("application")
+          if app is None or app.get(android_ns + "name") != ".CaptureApplication":
+              raise SystemExit("ERROR: CaptureApplication must be registered in the manifest.")
+          for path in sorted((root / "app/src/main").rglob("*.xml")):
+              ET.parse(path)
+          gradle = (root / "app/build.gradle.kts").read_text()
+          if 'id("org.jetbrains.kotlin.android")' in gradle:
+              raise SystemExit("ERROR: Do not add org.jetbrains.kotlin.android with the locked AGP 9 setup.")
+          for required_text, path in [
+              ("Notification.Action.Builder", root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt"),
+              ("registerCallback(mediaProjectionCallback", root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt"),
+              ("createVirtualDisplay", root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt"),
+              ("REQUIRED_STABLE_PRESENT_SAMPLES = 3", root / "app/src/main/java/com/mjthakur/screencapture/DetectionEngine.kt"),
+              ("REQUIRED_STABLE_EMPTY_SAMPLES = 2", root / "app/src/main/java/com/mjthakur/screencapture/DetectionEngine.kt"),
+          ]:
+              if required_text not in path.read_text():
+                  raise SystemExit(f"ERROR: Expected implementation marker missing: {required_text}")
+          print("XML syntax, manifest restrictions, required files, phase markers and Gradle plugin baseline verified.")
+          PY
+
+          echo "Source ZIP passed integrity and static checks."
           echo "Source is isolated at: $SOURCE_DIR"
 
       - name: Set up JDK 17
@@ -108,31 +146,44 @@ jobs:
 
           unzip -q "$DOWNLOAD_DIR/$FILE" -d "$INSTALL_DIR"
           test -x "$INSTALL_DIR/gradle-${VERSION}/bin/gradle"
-          echo "$INSTALL_DIR/gradle-${VERSION}/bin" >> "$GITHUB_PATH"
           "$INSTALL_DIR/gradle-${VERSION}/bin/gradle" --version
 
-      - name: Build Phase 3 debug APK
+      - name: Build integrated Phase 8 debug APK
         shell: bash
-        working-directory: ${{ runner.temp }}/mj_phase3_source
+        working-directory: ${{ runner.temp }}/mj_phase8_rc1
         run: |
           set -euo pipefail
-          "$RUNNER_TEMP/gradle-9.6.0/bin/gradle" --no-daemon --stacktrace :app:assembleDebug
-          test -f app/build/outputs/apk/debug/app-debug.apk
+          "$RUNNER_TEMP/gradle-9.6.0/bin/gradle" --no-daemon --stacktrace --max-workers=2 :app:assembleDebug
+          test -s app/build/outputs/apk/debug/app-debug.apk
           echo "APK build completed: app/build/outputs/apk/debug/app-debug.apk"
 
-      - name: Copy APK to artifact staging folder
+      - name: Verify built APK manifest permissions
+        shell: bash
+        working-directory: ${{ runner.temp }}/mj_phase8_rc1
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          PERMISSIONS="$RUNNER_TEMP/apk-permissions.txt"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump permissions "$APK" | tee "$PERMISSIONS"
+          if grep -q 'android.permission.INTERNET' "$PERMISSIONS"; then
+            echo "ERROR: Built APK unexpectedly requests INTERNET permission."
+            exit 1
+          fi
+          echo "Built APK does not request INTERNET permission."
+
+      - name: Stage APK artifact
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/build-output"
-          cp "$RUNNER_TEMP/mj_phase3_source/app/build/outputs/apk/debug/app-debug.apk" \
-             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase3-v2-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase3-v2-debug.apk"
+          cp "$RUNNER_TEMP/mj_phase8_rc1/app/build/outputs/apk/debug/app-debug.apk" \
+             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC1-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC1-debug.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MJ-Screen-Capture-Phase3-v2-debug-APK
-          path: build-output/MJ-Screen-Capture-Phase3-v2-debug.apk
+          name: MJ-Screen-Capture-Phase8-RC1-debug-APK
+          path: build-output/MJ-Screen-Capture-Phase8-RC1-debug.apk
           if-no-files-found: error
           
