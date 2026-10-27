@@ -16,6 +16,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # IMPORTANT: Extract before setup-gradle so its cache step can find
+      # the Gradle build files inside buildsrc/.
+      - name: Extract Phase 1 Android source
+        run: |
+          test -f phase1-source.zip
+          mkdir -p buildsrc
+          unzip -oq phase1-source.zip -d buildsrc
+          test -f buildsrc/settings.gradle.kts
+          test -f buildsrc/build.gradle.kts
+          test -f buildsrc/app/build.gradle.kts
+
       - name: Set up JDK 17
         uses: actions/setup-java@v6
         with:
@@ -31,20 +42,16 @@ jobs:
           gradle-version: "9.6.0"
           cache-provider: basic
 
-      - name: Extract Phase 1 Android source
-        run: |
-          test -f phase1-source.zip
-          mkdir -p buildsrc
-          unzip -q phase1-source.zip -d buildsrc
-
       - name: Accept Android SDK licenses and install API 36
         run: |
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Generate wrapper and build APK
         run: |
-          gradle -p buildsrc wrapper --gradle-version 9.6.0 --distribution-type bin
-          ./buildsrc/gradlew --no-daemon -p buildsrc :app:assembleDebug
+          cd buildsrc
+          gradle wrapper --gradle-version 9.6.0 --distribution-type bin
+          ./gradlew --no-daemon :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
