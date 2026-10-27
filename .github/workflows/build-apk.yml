@@ -70,7 +70,7 @@ jobs:
           done
 
           python3 - "$SOURCE_DIR" <<'PY'
-          import pathlib, sys, xml.etree.ElementTree as ET
+          import pathlib, re, sys, xml.etree.ElementTree as ET
           root = pathlib.Path(sys.argv[1])
           manifest_path = root / "app/src/main/AndroidManifest.xml"
           manifest = ET.parse(manifest_path).getroot()
@@ -89,6 +89,29 @@ jobs:
           history = (root / "app/src/main/java/com/mjthakur/screencapture/HistoryActivity.kt").read_text()
           if "setSingleLine(true)" not in history or "singleLine = true" in history:
               raise SystemExit("ERROR: HistoryActivity must use setSingleLine(true); the RC1 Kotlin property error must not return.")
+
+          # Regression check for the exact RC4 compile failure seen in GitHub Actions.
+          for relative_path in [
+              "app/src/main/java/com/mjthakur/screencapture/AreaSetupActivity.kt",
+              "app/src/main/java/com/mjthakur/screencapture/EmptySampleActivity.kt",
+          ]:
+              source = (root / relative_path).read_text()
+              if "import android.content.Intent" not in source:
+                  raise SystemExit(f"ERROR: Missing 'import android.content.Intent' in {relative_path}")
+              if "Intent(" not in source:
+                  raise SystemExit(f"ERROR: Expected Intent usage was not found in {relative_path}")
+
+          # Check that Kotlin references to generated R.id values have XML declarations.
+          declared_ids = set()
+          for xml_path in (root / "app/src/main").rglob("*.xml"):
+              declared_ids.update(re.findall(r"@\+id/([A-Za-z0-9_]+)", xml_path.read_text()))
+          referenced_ids = set()
+          for kotlin_path in (root / "app/src/main").rglob("*.kt"):
+              referenced_ids.update(re.findall(r"R\.id\.([A-Za-z0-9_]+)", kotlin_path.read_text()))
+          missing_ids = sorted(referenced_ids - declared_ids)
+          if missing_ids:
+              raise SystemExit("ERROR: R.id references missing from XML: " + ", ".join(missing_ids))
+
           for required_text, path in [
               ("Notification.Action.Builder", root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt"),
               ("registerCallback(mediaProjectionCallback", root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt"),
