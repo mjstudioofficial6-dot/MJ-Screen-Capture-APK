@@ -1,4 +1,4 @@
-name: Build MJ Screen Capture APK - Phase 8 RC1
+name: Build MJ Screen Capture APK - Phase 8 RC2
 
 on:
   push:
@@ -24,11 +24,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase8_Integrated_RC1.zip"
-          SOURCE_DIR="$RUNNER_TEMP/mj_phase8_rc1"
+          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase8_Integrated_RC2.zip"
+          SOURCE_DIR="$RUNNER_TEMP/mj_phase8_rc2"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Required source ZIP is missing: MJ_Phase8_Integrated_RC1.zip"
+            echo "ERROR: Required source ZIP is missing: MJ_Phase8_Integrated_RC2.zip"
             echo "Upload that exact ZIP to the repository root. Older phase ZIPs may remain; they are ignored."
             find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -printf '%f\n' | sort
             exit 1
@@ -84,6 +84,9 @@ jobs:
           gradle = (root / "app/build.gradle.kts").read_text()
           if 'id("org.jetbrains.kotlin.android")' in gradle:
               raise SystemExit("ERROR: Do not add org.jetbrains.kotlin.android with the locked AGP 9 setup.")
+          history = (root / "app/src/main/java/com/mjthakur/screencapture/HistoryActivity.kt").read_text()
+          if "setSingleLine(true)" not in history or "singleLine = true" in history:
+              raise SystemExit("ERROR: HistoryActivity must use setSingleLine(true); the RC1 Kotlin property error must not return.")
           for required_text, path in [
               ("Notification.Action.Builder", root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt"),
               ("registerCallback(mediaProjectionCallback", root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt"),
@@ -150,7 +153,7 @@ jobs:
 
       - name: Build integrated Phase 8 debug APK
         shell: bash
-        working-directory: ${{ runner.temp }}/mj_phase8_rc1
+        working-directory: ${{ runner.temp }}/mj_phase8_rc2
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gradle-9.6.0/bin/gradle" --no-daemon --stacktrace --max-workers=2 :app:assembleDebug
@@ -159,7 +162,7 @@ jobs:
 
       - name: Verify built APK manifest permissions
         shell: bash
-        working-directory: ${{ runner.temp }}/mj_phase8_rc1
+        working-directory: ${{ runner.temp }}/mj_phase8_rc2
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
@@ -176,14 +179,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/build-output"
-          cp "$RUNNER_TEMP/mj_phase8_rc1/app/build/outputs/apk/debug/app-debug.apk" \
-             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC1-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC1-debug.apk"
+          cp "$RUNNER_TEMP/mj_phase8_rc2/app/build/outputs/apk/debug/app-debug.apk" \
+             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC2-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC2-debug.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MJ-Screen-Capture-Phase8-RC1-debug-APK
-          path: build-output/MJ-Screen-Capture-Phase8-RC1-debug.apk
+          name: MJ-Screen-Capture-Phase8-RC2-debug-APK
+          path: build-output/MJ-Screen-Capture-Phase8-RC2-debug.apk
           if-no-files-found: error
           
