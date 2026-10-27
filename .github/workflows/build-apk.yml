@@ -1,4 +1,4 @@
-name: Build MJ Screen Capture APK - Phase 2
+name: Build MJ Screen Capture APK - Phase 3
 
 on:
   push:
@@ -20,15 +20,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Extract and validate Phase 2 source ZIP
+      - name: Extract and validate Phase 3 source ZIP
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase2_Source_v3.zip"
-          SOURCE_DIR="$RUNNER_TEMP/mj_phase2_source"
+          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase3_Source_v1.zip"
+          SOURCE_DIR="$RUNNER_TEMP/mj_phase3_source"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Required source ZIP is missing: MJ_Phase2_Source_v3.zip"
+            echo "ERROR: Required source ZIP is missing: MJ_Phase3_Source_v1.zip"
             echo "Upload that exact ZIP to the repository root."
             echo "Root files currently present:"
             find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -printf '%f\n' | sort
@@ -47,7 +47,10 @@ jobs:
             app/build.gradle.kts \
             app/src/main/AndroidManifest.xml \
             app/src/main/java/com/mjthakur/screencapture/CaptureService.kt \
-            app/src/main/java/com/mjthakur/screencapture/MainActivity.kt; do
+            app/src/main/java/com/mjthakur/screencapture/MainActivity.kt \
+            app/src/main/java/com/mjthakur/screencapture/AreaSetupActivity.kt \
+            app/src/main/java/com/mjthakur/screencapture/AreaSelectionView.kt \
+            app/src/main/res/layout/activity_area_setup.xml; do
             if [ ! -f "$SOURCE_DIR/$required" ]; then
               echo "ERROR: Required source file missing: $required"
               find "$SOURCE_DIR" -maxdepth 7 -type f | sort | head -100
@@ -108,9 +111,9 @@ jobs:
           echo "$INSTALL_DIR/gradle-${VERSION}/bin" >> "$GITHUB_PATH"
           "$INSTALL_DIR/gradle-${VERSION}/bin/gradle" --version
 
-      - name: Build Phase 2 debug APK
+      - name: Build Phase 3 debug APK
         shell: bash
-        working-directory: ${{ runner.temp }}/mj_phase2_source
+        working-directory: ${{ runner.temp }}/mj_phase3_source
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gradle-9.6.0/bin/gradle" --no-daemon --stacktrace :app:assembleDebug
@@ -122,13 +125,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/build-output"
-          cp "$RUNNER_TEMP/mj_phase2_source/app/build/outputs/apk/debug/app-debug.apk" \
-             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase2-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase2-debug.apk"
+          cp "$RUNNER_TEMP/mj_phase3_source/app/build/outputs/apk/debug/app-debug.apk" \
+             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase3-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase3-debug.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MJ-Screen-Capture-Phase2-debug-APK
-          path: build-output/MJ-Screen-Capture-Phase2-debug.apk
+          name: MJ-Screen-Capture-Phase3-debug-APK
+          path: build-output/MJ-Screen-Capture-Phase3-debug.apk
           if-no-files-found: error
