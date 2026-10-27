@@ -1,4 +1,4 @@
-name: Build MJ Screen Capture APK - Phase 8 RC5
+name: Build MJ Screen Capture APK - Phase 8 RC6
 
 on:
   push:
@@ -24,11 +24,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase8_Integrated_RC5.zip"
-          SOURCE_DIR="$RUNNER_TEMP/mj_phase8_rc5"
+          ZIP_FILE="$GITHUB_WORKSPACE/MJ_Phase8_Integrated_RC6.zip"
+          SOURCE_DIR="$RUNNER_TEMP/mj_phase8_rc6"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Required source ZIP is missing: MJ_Phase8_Integrated_RC5.zip"
+            echo "ERROR: Required source ZIP is missing: MJ_Phase8_Integrated_RC6.zip"
             echo "Upload that exact ZIP to the repository root. Older phase ZIPs may remain; they are ignored."
             find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -printf '%f\n' | sort
             exit 1
@@ -142,14 +142,28 @@ jobs:
                   raise SystemExit(f"ERROR: Expected implementation marker missing: {required_text}")
           area_setup = (root / "app/src/main/java/com/mjthakur/screencapture/AreaSetupActivity.kt").read_text()
           if "saveAreasAndCalibrate(" in area_setup or "Save + Calibrate Empty" in area_setup:
-              raise SystemExit("ERROR: RC5 must not use the area-selection screenshot as its empty baseline.")
+              raise SystemExit("ERROR: RC6 must not use the area-selection screenshot as its empty baseline.")
           detector = (root / "app/src/main/java/com/mjthakur/screencapture/DetectionEngine.kt").read_text()
           if "CHANGED_PIXEL_RATIO_THRESHOLD = 0.22f" not in detector or "MEAN_DIFFERENCE_THRESHOLD = 20f" not in detector:
-              raise SystemExit("ERROR: RC5 presence thresholds are missing or reverted.")
+              raise SystemExit("ERROR: RC6 presence thresholds are missing or reverted.")
           config = (root / "app/src/main/java/com/mjthakur/screencapture/CaptureConfig.kt").read_text()
           if "CURRENT_EMPTY_CALIBRATION_VERSION = 2" not in config:
-              raise SystemExit("ERROR: RC5 must reject old unverified empty baselines.")
-          print("RC5 XML, manifest, required files, paired-sample flow, detector debounce, version gate and Gradle baseline verified.")
+              raise SystemExit("ERROR: RC6 must reject old unverified empty baselines.")
+          if "MAX_IMAGES_PER_DECK = 400" not in config or "KEY_NEXT_SESSION_ID" not in config:
+              raise SystemExit("ERROR: RC6 Deck limit or continue-existing-Deck setting is missing.")
+          database_source = (root / "app/src/main/java/com/mjthakur/screencapture/CaptureDatabase.kt").read_text()
+          for marker in ["session_id INTEGER NOT NULL DEFAULT 0", "createDeckSession()", "getCapturesForSession", "renameSession(", "deleteSession(", "DATABASE_VERSION = 2"]:
+              if marker not in database_source:
+                  raise SystemExit(f"ERROR: Deck database implementation is missing: {marker}")
+          history_source = (root / "app/src/main/java/com/mjthakur/screencapture/HistoryActivity.kt").read_text()
+          for marker in ["records.chunked(10)", "Rename Deck", "Delete Deck", "Use Next", "Export This Deck (ZIP)"]:
+              if marker not in history_source:
+                  raise SystemExit(f"ERROR: Deck manager / compact grid feature is missing: {marker}")
+          service_source = (root / "app/src/main/java/com/mjthakur/screencapture/CaptureService.kt").read_text()
+          for marker in ["openCaptureDeck()", "decks/deck_$sessionId", "MAX_IMAGES_PER_DECK", "KEY_ACTIVE_SESSION_ID"]:
+              if marker not in service_source:
+                  raise SystemExit(f"ERROR: Per-session image saving is missing: {marker}")
+          print("RC6 static checks passed: XML, offline manifest, source imports/IDs, paired calibration, detector baseline, per-Deck folders, migration, 400-image cap, rename/delete/reuse and 10-column History grid.")
           PY
 
           echo "Source ZIP passed integrity and static checks."
@@ -206,7 +220,7 @@ jobs:
 
       - name: Build integrated Phase 8 debug APK
         shell: bash
-        working-directory: ${{ runner.temp }}/mj_phase8_rc5
+        working-directory: ${{ runner.temp }}/mj_phase8_rc6
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gradle-9.6.0/bin/gradle" --no-daemon --stacktrace --max-workers=2 :app:assembleDebug
@@ -215,7 +229,7 @@ jobs:
 
       - name: Verify built APK manifest permissions
         shell: bash
-        working-directory: ${{ runner.temp }}/mj_phase8_rc5
+        working-directory: ${{ runner.temp }}/mj_phase8_rc6
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
@@ -232,13 +246,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/build-output"
-          cp "$RUNNER_TEMP/mj_phase8_rc5/app/build/outputs/apk/debug/app-debug.apk" \
-             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC5-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC5-debug.apk"
+          cp "$RUNNER_TEMP/mj_phase8_rc6/app/build/outputs/apk/debug/app-debug.apk" \
+             "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC6-debug.apk"
+          ls -lh "$GITHUB_WORKSPACE/build-output/MJ-Screen-Capture-Phase8-RC6-debug.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MJ-Screen-Capture-Phase8-RC5-debug-APK
-          path: build-output/MJ-Screen-Capture-Phase8-RC5-debug.apk
+          name: MJ-Screen-Capture-Phase8-RC6-debug-APK
+          path: build-output/MJ-Screen-Capture-Phase8-RC6-debug.apk
           if-no-files-found: error
